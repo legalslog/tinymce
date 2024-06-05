@@ -70,6 +70,7 @@ export interface ImageDialogData {
   borderstyle: string;
   fileinput: File[];
   isDecorative: boolean;
+  uploadcare: string;
 }
 
 export type API = Dialog.DialogInstanceApi<ImageDialogData>;

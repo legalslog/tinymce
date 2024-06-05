@@ -68,7 +68,8 @@ const fromImageData = (image: ImageData): ImageDialogData => ({
   hspace: image.hspace,
   borderstyle: image.borderStyle,
   fileinput: [],
-  isDecorative: image.isDecorative
+  isDecorative: image.isDecorative,
+  uploadcare: ''
 });
 
 const toImageData = (data: ImageDialogData, removeEmptyAlt: boolean): ImageData => ({
@@ -275,6 +276,18 @@ const closeHandler = (state: ImageDialogState) => (): void => {
   state.open = false;
 };
 
+const makeUploadcareTab = (): DialogType.TabSpec => {
+  return {
+    title: 'Uploadcare',
+    items: [
+      {
+        type: 'iframe',
+        name: 'uploadcare'
+      }
+    ]
+  };
+};
+
 const makeDialogBody = (info: ImageDialogInfo): DialogType.TabPanelSpec | DialogType.PanelSpec => {
   if (info.hasAdvTab || info.hasUploadUrl || info.hasUploadHandler) {
     const tabPanel: DialogType.TabPanelSpec = {
@@ -282,7 +295,7 @@ const makeDialogBody = (info: ImageDialogInfo): DialogType.TabPanelSpec | Dialog
       tabs: Arr.flatten([
         [ MainTab.makeTab(info) ],
         info.hasAdvTab ? [ AdvTab.makeTab(info) ] : [],
-        info.hasUploadTab && (info.hasUploadUrl || info.hasUploadHandler) ? [ UploadTab.makeTab(info) ] : []
+        info.hasUploadTab && (info.hasUploadUrl || info.hasUploadHandler) ? [ UploadTab.makeTab(info), makeUploadcareTab() ] : []
       ])
     };
     return tabPanel;
@@ -398,7 +411,73 @@ export const Dialog = (editor: Editor): { open: () => void } => {
           onClose: closeHandler(state)
         };
       })
-      .then(editor.windowManager.open);
+      .then((config) => {
+        const api = editor.windowManager.open(config);
+        api.setData({
+          uploadcare: `
+<style>
+body {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+}
+
+.picker {
+  width: 500px;
+  height: 500px;
+  border: 1px solid black;
+  z-index: 1000;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: auto;
+}
+</style>
+<script type="module">
+    import * as LR from "https://cdn.jsdelivr.net/npm/@uploadcare/blocks@0.42.1/web/blocks.min.js";
+    LR.registerBlocks(LR);
+</script>
+<link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@uploadcare/blocks@0.42.1/web/lr-file-uploader-regular.min.css"
+>
+<lr-config
+    ctx-name="my-uploader"
+    pubkey="cfef242412638bfc4193"
+    multiple="false"
+    use-cloud-image-editor="false"
+    source-list="local, url, camera, dropbox"
+></lr-config>
+<lr-file-uploader-inline ctx-name="my-uploader"></lr-file-uploader-inline>
+<lr-upload-ctx-provider ctx-name="my-uploader"></lr-upload-ctx-provider>
+
+<script>
+const ctx = document.querySelector('lr-upload-ctx-provider')
+ctx.addEventListener('change', e => {
+  top.postMessage({ type: 'uploadcare', detail: e.detail }, '*')
+})
+</script>
+        `
+        });
+
+        window.addEventListener('message', (e) => {
+          if (e.data.type === 'uploadcare') {
+            console.log(e.data.detail);
+            if (e.data.detail.isSuccess) {
+              const url = e.data.detail.allEntries.length > 0 ? e.data.detail.allEntries[0].cdnUrl : '';
+              if (url) {
+                api.setData({ src: { value: url, meta: {}}});
+                api.showTab('general');
+                api.focus('src');
+              }
+            }
+          }
+        });
+      });
   };
   return {
     open
